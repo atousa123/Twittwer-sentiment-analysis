@@ -1,0 +1,333 @@
+# Polarity analysis
+install.packages("academictwitteR")
+library(academictwitteR)
+install.packages("jsonlite")
+library(jsonlite)
+install.packages("rjson")
+library(rjson)
+install.packages("httr")
+library(httr)
+
+heart_health_tweets <-
+    get_all_tweets(
+    query = "#AmericanHeartMonth",
+    start_tweets = "2019-01-01T00:00:00Z",
+    end_tweets = "2023-03-01T00:00:00Z",
+    file = "blmtweets",
+    data_path = "data/",
+    n = 50000,
+  )
+
+ts_plot(heart_health_tweets, "hours")
+
+library(tidytext)
+library(dplyr)
+heart_health_tidy<- heart_health_tweets %>%
+  select(created_at,text) %>%
+  unnest_tokens("word", text)
+
+heart_health_tidy %>% count(word, sort = TRUE)
+
+data("stop_words")
+
+heart_health_top_words <-
+  heart_health_tidy %>%
+  anti_join(stop_words) %>%
+  count(word) %>%
+  arrange(desc(n))
+
+heart_health_top_words <-
+  heart_health_top_words[-grep("https|t.co|amp|rt",
+                                                heart_health_top_words$word),]
+#select only top words
+top_20<-heart_health_top_words[1:20,]
+
+#create factor variable to sort by frequency
+heart_health_top_words$word <- factor(heart_health_top_words$word, levels = heart_health_top_words$word[order(heart_health_top_words$n,decreasing=TRUE)])
+
+# steps:
+# Select only the words 'war' and 'peace'.
+# count ocurrences of each per year
+
+heart_health_tidy %>%
+  filter(word %in% c("america", "australia")) %>% 
+  count(created_at, word)
+
+heart_health_tidy %>%
+  filter(word %in% c("america", "australia")) %>% 
+  count(created_at, word) %>% 
+  ggplot(aes(created_at, n, fill = word)) +
+  geom_col(position = "fill")
+
+library(ggplot2)
+ggplot(top_20, aes(x=word, y=n, fill=word))+
+  geom_bar(stat="identity")+
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))+
+  ylab("Number of Top 20 words in the tweets")+
+  xlab("")+
+  guides("none")
+
+
+heart_health_tidy$date<-as.Date(heart_health_tidy$created_at, 
+                                                 format = "%Y-%m-%d")
+negative <-
+ heart_health_tidy%>%
+  inner_join(get_sentiments("bing")) %>% 
+  filter(sentiment=="negative") %>%
+  count(date, sentiment)
+
+library(lubridate)
+#Figure 1
+ggplot(negative, aes(x=date, y=n))+
+  geom_line(color="red")+
+  theme_minimal()+
+  ylab("Frequency of Negative Words")+
+  xlab("date")
+
+positive <-
+  heart_health_tidy%>%
+  inner_join(get_sentiments("bing")) %>% 
+  filter(sentiment=="positive") %>%
+  count(date, sentiment)
+#Figure 2
+ggplot(positive, aes(x=date, y=n))+
+  geom_line(color="blue")+
+  theme_minimal()+
+  ylab("Frequency of positive Words")+
+  xlab("Date")
+
+sentiments
+bing_lex <- get_sentiments("bing")
+bing_lex
+heart_health_sentiments <- heart_health_tidy %>% 
+  inner_join(bing_lex)  # join to add semtinemt column
+heart_health_sentiments
+
+install.packages("tidyr")
+library(tidyr)
+#Figure 3
+heart_health_sentiments %>% 
+  count(date, sentiment) %>% # count by year and sentiment
+  pivot_wider(names_from = "sentiment", values_from = "n") %>% # create column for positive
+  # and negative sentiment
+  mutate(positive_ratio = positive/(negative + positive)) %>% # calculate positive ratio
+  # plot
+  ggplot(aes(date, positive_ratio)) +
+  geom_line(color="gray") +
+  geom_smooth(span = 0.3, se = FALSE) + # smooth for easier viewing
+  geom_hline(yintercept = .5, linetype="dotted", color = "orange", size = 1) + # .5 as reference
+  scale_x_continuous(breaks = seq(2019, 2023, by = 1)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+library(tidyverse)
+library(tidytext)
+heart_health_tweets
+heart_health_tidy %>%
+  count(word, sort = TRUE)
+
+heart_health_tidy %>%
+  count(word) %>% 
+  filter(n > 5000) %>% 
+  mutate(word = reorder(word, n)) %>%  # reorder values by frequency
+  ggplot(aes(word, n)) +
+  geom_col(fill = "gray") +
+  coord_flip()  # flip x and y coordinates so we can read the words better
+heart_health_tidy %>%
+  count(created_at, word, sort = T)  %>%  # count occurrence of word and sort descending
+  group_by(created_at) %>% 
+  mutate(n_tot = sum(n),              # count total number of words per doc
+         term_freq = n/n_tot)
+heart_health_tidy %>%
+  count(created_at, word)  %>%  # count n for each word
+  group_by(created_at) %>% 
+  mutate(n_tot = sum(n), # count total number of words per doc
+         term_freq = n/n_tot) %>% 
+  ggplot(aes(term_freq)) +
+  geom_histogram() 
+
+heart_health_tidy %>%
+  count(date, word)  %>%  # count n for each word
+  group_by(date) %>% 
+  mutate(n_tot = sum(n), # count total number of words per doc
+         term_freq = n/n_tot) %>% 
+  arrange(desc(term_freq)) %>% # sort by term frequency
+  top_n(1) %>%  # take the top for each year
+  print(n = Inf) # print all rows
+
+heart_health_tidy %>%
+  count(date, word, sort = TRUE)  %>%  # aggregate to count n for each word
+  bind_tf_idf(word, date, n) 
+
+heart_health_tidy %>%
+  count(date, word, sort = TRUE)  %>% 
+  bind_tf_idf(word, date, n) %>% 
+  arrange(desc(tf_idf))
+
+#Emotional analysis
+install.packages("twitteR")
+library(twitteR)
+install.packages("hms")
+library(hms)
+install.packages("lubridate")
+library(lubridate)
+install.packages("tidytext")
+library(tidytext)
+install.packages("tm")
+library(tm)
+install.packages("igraph")
+library(igraph)
+install.packages("glue")
+library(glue)
+install.packages("networkD3")
+library(networkD3)
+install.packages("plyr")
+library(plyr)
+install.packages("ggeasy")
+library(ggeasy)
+install.packages("plotly")
+library(plotly)
+install.packages("dplyr")
+library(dplyr)  
+install.packages("magrittr")
+library(magrittr)
+install.packages("tidyverse")
+library(tidyverse)
+install.packages("janeaustenr")
+library(janeaustenr)
+install.packages("widyr")
+library(widyr)
+installed.packages("syuzhet")
+library(syuzhet)
+install.packages("SnowballC")
+library("SnowballC")
+
+# Authonitical keys
+api_key <- "W4sme3ZBB5X7zXuNvVTbcSy9X"
+api_secret <- "2ROcOtvdBqvI8nRfDhjunrueyRy4eyWwyM65y887rDHiocs9Rv"
+access_token <- "1100668046731964416-dnza6HBVtj7b3zLtFgEE0Sk49eE3IB"
+access_token_secret <- "dxOQR1cZI45AiBCxhNLK8RWLTxlmODXWWdE7j182n24Qo"
+#Note: This will ask us permission for direct authentication, type '1' for yes:
+setup_twitter_oauth(api_key,api_secret,access_token,access_token_secret)
+
+# extracting 10000 tweets related to American Heart Month Campaign
+tweets <- searchTwitter("american_heart_month", n=3000, lang="en")
+
+n.tweet <- length(tweets)
+
+# convert tweets to a data frame
+tweets.df <- twListToDF(tweets)
+
+head(tweets.df$text)
+#moving hashtag , urls and other special charactersR
+tweets.df2 <- gsub("http.*","",tweets.df$text)
+
+tweets.df2 <- gsub("https.*","",tweets.df2)
+
+tweets.df2 <- gsub("#.*","",tweets.df2)
+
+tweets.df2 <- gsub("@.*","",tweets.df2)
+head(tweets.df2)
+
+installed.packages("syuzhet")
+library("syuzhet")
+
+#tting sentiment defining wordsR
+word.df <- as.vector(tweets.df2)
+
+emotion.df <- get_nrc_sentiment(word.df)
+
+emotion.df2 <- cbind(tweets.df2, emotion.df) 
+
+head(emotion.df2)
+#ting positive sentimentsR
+sent.value <- get_sentiment(word.df)
+
+most.positive <- word.df[sent.value == max(sent.value)]
+most.positive
+
+#ting negative sentimentsR
+most.negative <- word.df[sent.value <= min(sent.value)] 
+most.negative 
+
+sent.value
+
+#positive tweetsR
+positive.tweets <- word.df[sent.value > 0]
+head(positive.tweets)
+
+negative.tweets <- word.df[sent.value < 0] 
+head(negative.tweets)
+
+neutral.tweets <- word.df[sent.value == 0] 
+head(neutral.tweets)
+
+# CLEANING TWEETS
+tweets.df$text=gsub("&amp", "", tweets.df$text)
+tweets.df$text = gsub("&amp", "", tweets.df$text)
+tweets.df$text = gsub("(RT|via)((?:\\b\\W*@\\w+)+)", "", tweets.df$text)
+tweets.df$text = gsub("@\\w+", "", tweets.df$text)
+tweets.df$text = gsub("[[:punct:]]", "", tweets.df$text)
+tweets.df$text = gsub("[[:digit:]]", "", tweets.df$text)
+tweets.df$text = gsub("http\\w+", "", tweets.df$text)
+tweets.df$text = gsub("[ \t]{2,}", "", tweets.df$text)
+tweets.df$text = gsub("^\\s+|\\s+$", "", tweets.df$text)
+
+tweets.df$text <- iconv(tweets.df$text, "UTF-8", "ASCII", sub="")
+
+# Emotions for each tweet using NRC dictionary
+emotions <- get_nrc_sentiment(tweets.df$text)
+emo_bar = colSums(emotions)
+emo_sum = data.frame(count=emo_bar, emotion=names(emo_bar))
+emo_sum$emotion = factor(emo_sum$emotion, levels=emo_sum$emotion[order(emo_sum$count, decreasing = TRUE)])
+
+# Visualize the emotions from NRC sentiments
+library(plotly)
+p <- plot_ly(emo_sum, x=~emotion, y=~count, type="bar", color=~emotion) %>%
+  layout(xaxis=list(title=""), showlegend=FALSE,
+         title="Emotion Type for American Heart Month Campaign")
+p
+
+# Create comparison word cloud data
+
+wordcloud_tweet = c(
+  paste(tweets.df$text[emotions$anger > 0], collapse=" "),
+  paste(tweets.df$text[emotions$anticipation > 0], collapse=" "),
+  paste(tweets.df$text[emotions$disgust > 0], collapse=" "),
+  paste(tweets.df$text[emotions$fear > 0], collapse=" "),
+  paste(tweets.df$text[emotions$joy > 0], collapse=" "),
+  paste(tweets.df$text[emotions$sadness > 0], collapse=" "),
+  paste(tweets.df$text[emotions$surprise > 0], collapse=" "),
+  paste(tweets.df$text[emotions$trust > 0], collapse=" ")
+)
+
+# create corpus
+corpus = Corpus(VectorSource(wordcloud_tweet))
+
+# remove punctuation, convert every word in lower case and remove stop words
+
+corpus = tm_map(corpus, tolower)
+corpus = tm_map(corpus, removePunctuation)
+corpus = tm_map(corpus, removeWords, c(stopwords("english")))
+corpus = tm_map(corpus, stemDocument)
+
+# create document term matrix
+
+tdm = TermDocumentMatrix(corpus)
+
+# convert as matrix
+tdm = as.matrix(tdm)
+tdmnew <- tdm[nchar(rownames(tdm)) < 11,]
+
+# column name binding
+colnames(tdm) = c('anger', 'anticipation', 'disgust', 'fear', 'joy', 'sadness', 'surprise', 'trust')
+colnames(tdmnew) <- colnames(tdm)
+install.packages("wordcloud")
+library(wordcloud)
+install.packages("RColorBrewer")
+library(RColorBrewer)
+comparison.cloud(tdmnew, random.order=FALSE,
+                 colors = c("#00B2FF", "red", "#FF0099", "#6600CC", "green", "orange", "blue", "brown"),
+                 title.size=1, max.words=250, scale=c(2.5, 0.4),rot.per=0.4)
+
+
